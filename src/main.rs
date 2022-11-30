@@ -63,7 +63,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .join("\n");
         println!("Programs:\n{programs}");
         output_programs.write_all(vec!["state","program","spending"].join(COL_SEPARATOR).as_bytes())?;
-        output_years.write(b"\n")?;
+        output_programs.write(b"\n")?;
         output_programs.write_all(programs.as_bytes())?;
 
         let year_spending = document
