@@ -10,15 +10,22 @@ use regex::Regex;
 
 pub static COL_SEPARATOR : &'static str = "\t";
 
-async fn livestock_data() -> Result<(), Box<dyn std::error::Error>> {
-    std::fs::create_dir_all("programs")?;
-    std::fs::create_dir_all("year")?;
+
+async fn livestock_data(progcode: &str) -> Result<(), Box<dyn std::error::Error>> {
+    std::fs::create_dir_all(progcode)?;
+
+    let chart_data_varname = match progcode {
+        "livestock" => "chartData",
+        "tot_lvstfo" => "data",
+        _ => panic!("Unknown progcode {}", progcode)
+    };
 
     for state_fips_idx in 1..=56 {
         let fips = state_fips_idx * 1000;
-        let resp = reqwest::get(format!("https://farm.ewg.org/progdetail.php?fips={fips:05}&progcode=livestock"))
+        let resp = reqwest::get(format!("https://farm.ewg.org/progdetail.php?fips={fips:05}&progcode={progcode}"))
             .await;
         if resp.is_err() {
+            println!("Error reading URL: {e:?}", e = resp.err());
             continue;
         }
         let resp = resp?;
@@ -33,50 +40,19 @@ async fn livestock_data() -> Result<(), Box<dyn std::error::Error>> {
             continue;
         }
 
-        let mut output_programs = File::create(format!("programs/programs_{state}.tsv"))?;
-        let mut output_years = File::create(format!("year/year_{state}.tsv"))?;
-
-        let table = document
-            .find(Name("table"))
-            .filter(|n| n.attr("title").unwrap_or("") == "Programs included in livestock subsidies")
-            .next();
-
-        let table = if table.is_none() {
-            continue;
-        } else {
-            table.unwrap()
-        };
-
-        let programs = table
-            .find(Name("tr"))
-            .skip(1)
-            .map(|row| row.descendants()
-                .filter_map(|n| n.as_text())
-                .map(|txt| txt.replace(",", "").replace("$", ""))
-                .collect::<Vec<String>>()
-                .join(COL_SEPARATOR))
-            .map(|row_values| {
-                let mut row_csv = String::new();
-                row_csv.push_str(state);
-                row_csv.push_str(COL_SEPARATOR);
-                row_csv.push_str(&row_values);
-                row_csv
-            })
-            .collect::<Vec<String>>()
-            .join("\n");
-        println!("Programs:\n{programs}");
-        output_programs.write_all(vec!["state","program","spending"].join(COL_SEPARATOR).as_bytes())?;
-        output_programs.write(b"\n")?;
-        output_programs.write_all(programs.as_bytes())?;
+        let mut output_years = File::create(format!("{progcode}/{state}.tsv"))?;
 
         let year_spending = document
             .find(Name("script"))
-            .filter(|n| n.html().contains("chartData"))
+            .filter(|n| {
+                let chart_data_search = format!("var {chart_data_varname} = ");
+                n.html().contains(&chart_data_search)
+            })
             .next()
             .map(|n| {
                 let html = n.html();
-                let chart_data_search = "var chartData = ";
-                let chart_data_start = html.find(chart_data_search).unwrap() + chart_data_search.len();
+                let chart_data_search = format!("var {chart_data_varname} = ");
+                let chart_data_start = html.find(&chart_data_search).unwrap() + chart_data_search.len();
                 let chart_data_end = html[chart_data_start..].find(";").unwrap() + chart_data_start;
                 let chart_data_str = &html[chart_data_start..chart_data_end];
                 // Delete trailing comma
@@ -109,7 +85,7 @@ async fn livestock_data() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-use fantoccini::{ClientBuilder, Locator};
+use fantoccini::{ClientBuilder};
 // Needs a web driver (chromedriver, geckodriver) running on port 9515
 async fn spending_data() -> Result<(), Box<dyn std::error::Error>> {
     std::fs::create_dir_all("spending")?;
@@ -175,8 +151,9 @@ struct Args {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
     match args.data.as_str() {
-        "livestock" => livestock_data().await?,
+        "livestock" => livestock_data("livestock").await?,
         "spending" => spending_data().await?,
+        "disaster_spending" => livestock_data("tot_lvstfo").await?,
         s => panic!("Unknown data {s}")
     }
 
