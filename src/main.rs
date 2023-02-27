@@ -16,8 +16,7 @@ async fn livestock_data(progcode: &str) -> Result<(), Box<dyn std::error::Error>
 
     let chart_data_varname = match progcode {
         "livestock" => "chartData",
-        "tot_lvstfo" => "data",
-        _ => panic!("Unknown progcode {}", progcode)
+        _ => "data"
     };
 
     for state_fips_idx in 1..=56 {
@@ -151,10 +150,8 @@ struct Args {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
     match args.data.as_str() {
-        "livestock" => livestock_data("livestock").await?,
         "spending" => spending_data().await?,
-        "disaster_spending" => livestock_data("tot_lvstfo").await?,
-        s => panic!("Unknown data {s}")
+        s => livestock_data(s).await?
     }
 
     Ok(())
